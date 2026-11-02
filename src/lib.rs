@@ -13,7 +13,10 @@
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Message {
-    Hello { session_id: u64, keepalive_secs: u16 },
+    Hello {
+        session_id: u64,
+        keepalive_secs: u32,
+    },
     Data(Vec<u8>),
 }
 
@@ -28,44 +31,42 @@ pub enum ParseError {
 
 pub fn parse(buf: &[u8]) -> Result<Message, ParseError> {
     // 1. Read the 7-byte header.
-    let header: &[u8] = &buf[..7]; // 1A
-    // let header: &[u8] = buf.get(..7).ok_or(ParseError::TooShort)?; // 1B
-    // let header: &[u8] = buf.get(..7).unwrap(); // 1C
+    let header: &[u8] = buf.get(..7).ok_or(ParseError::TooShort)?; // 1B
 
     // 2. Check the magic.
-    assert!(header[0..2] == *b"GW"); // 2A
-    // if header[0] != b'G' { return Err(ParseError::BadMagic); } // 2B
-    // if header[0..2] != *b"GW" { return Err(ParseError::BadMagic); } // 2C
+    if header[0..2] != *b"GW" {
+        return Err(ParseError::BadMagic);
+    } // 2C
 
     let msg_type = header[2];
     let len = u32::from_be_bytes([header[3], header[4], header[5], header[6]]);
 
     // 3. Check the payload length.
-    let _ = len; // 3A
-    // if len > 65_536 { return Err(ParseError::TooLarge(len)); } // 3B
-    // if len >= 65_536 { return Err(ParseError::TooLarge(len)); } // 3C
+    if len > 65_536 {
+        return Err(ParseError::TooLarge(len));
+    } // 3B
 
     // 4. Take the payload.
-    let payload = &buf[7..7 + len as usize]; // 4A
-    // let payload = &buf[7..buf.len().min(7 + len as usize)]; // 4B
-    // let payload = buf.get(7..7 + len as usize).ok_or(ParseError::TooShort)?; // 4C
+    let payload = buf.get(7..7 + len as usize).ok_or(ParseError::TooShort)?; // 4C
 
     // 5. Decide by message type.
-    match msg_type { 1 => hello(payload), _ => Ok(Message::Data(payload.to_vec())) } // 5A
-    // match msg_type { 1 => hello(payload), 0..=2 => Ok(Message::Data(payload.to_vec())), _ => Err(ParseError::UnknownType(msg_type)) } // 5B
-    // match msg_type { 1 => hello(payload), 2 => Ok(Message::Data(payload.to_vec())), _ => Err(ParseError::UnknownType(msg_type)) } // 5C
+    match msg_type {
+        1 => hello(payload),
+        2 => Ok(Message::Data(payload.to_vec())),
+        _ => Err(ParseError::UnknownType(msg_type)),
+    } // 5C
 }
 
 fn hello(payload: &[u8]) -> Result<Message, ParseError> {
-    let p: &[u8; 12] = payload.try_into().map_err(|_| ParseError::BadHelloLength(payload.len()))?;
+    let p: &[u8; 12] = payload
+        .try_into()
+        .map_err(|_| ParseError::BadHelloLength(payload.len()))?;
 
     // 6. Read the session id.
     let session_id = u64::from_be_bytes(p[0..8].try_into().unwrap()); // 6A
-    // let session_id = u64::from_le_bytes(p[0..8].try_into().unwrap()); // 6B
-    // let session_id = u32::from_be_bytes(p[0..4].try_into().unwrap()) as u64; // 6C
 
     Ok(Message::Hello {
         session_id,
-        keepalive_secs: u32::from_be_bytes(p[8..12].try_into().unwrap()) as u16,
+        keepalive_secs: u32::from_be_bytes(p[8..12].try_into().unwrap()),
     })
 }
